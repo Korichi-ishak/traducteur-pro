@@ -13,7 +13,7 @@ import Revision from './components/Revision';
 import Statistics from './components/Statistics';
 import { addToHistory } from './services/historyService';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 
 function App() {
   const [currentView, setCurrentView] = useState('translator'); // translator, history, revision, statistics
