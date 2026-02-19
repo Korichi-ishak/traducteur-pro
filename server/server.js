@@ -300,14 +300,17 @@ app.get('/api/history/statistics', async (req, res) => {
   }
 });
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`\n🚀 Server running on http://localhost:${PORT}`);
-  console.log(`📊 API endpoints:`);
-  console.log(`   POST /api/translate`);
-  console.log(`   GET  /api/history`);
-  console.log(`   GET  /api/history/search`);
-  console.log(`   GET  /api/history/revision/words`);
-  console.log(`   POST /api/history/revision`);
-  console.log(`   GET  /api/history/statistics\n`);
-});
+if (process.env.NODE_ENV !== 'production') {
+  app.listen(PORT, () => {
+    console.log(`\n🚀 Server running on http://localhost:${PORT}`);
+    console.log(`📊 API endpoints:`);
+    console.log(`   POST /api/translate`);
+    console.log(`   GET  /api/history`);
+    console.log(`   GET  /api/history/search`);
+    console.log(`   GET  /api/history/revision/words`);
+    console.log(`   POST /api/history/revision`);
+    console.log(`   GET  /api/history/statistics\n`);
+  });
+}
+
+module.exports = app;
