@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import './RevisionView.css';
 
@@ -13,11 +13,7 @@ function RevisionView({ apiUrl }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    loadRevisionWords();
-  }, []);
-
-  const loadRevisionWords = async () => {
+  const loadRevisionWords = useCallback(async () => {
     try {
       setLoading(true);
       const response = await axios.get(`${apiUrl}/api/history/revision/words`);
@@ -36,7 +32,11 @@ function RevisionView({ apiUrl }) {
       setError('Erreur lors du chargement des mots');
       setLoading(false);
     }
-  };
+  }, [apiUrl]);
+
+  useEffect(() => {
+    loadRevisionWords();
+  }, [loadRevisionWords]);
 
   const checkAnswer = async () => {
     const currentWord = words[currentIndex];

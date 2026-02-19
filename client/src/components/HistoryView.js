@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import './HistoryView.css';
 
@@ -8,11 +8,7 @@ function HistoryView({ apiUrl, refreshTrigger, onWordSelect }) {
   const [error, setError] = useState('');
   const [sortBy, setSortBy] = useState('recent'); // recent, az, level
 
-  useEffect(() => {
-    loadHistory();
-  }, [refreshTrigger]);
-
-  const loadHistory = async () => {
+  const loadHistory = useCallback(async () => {
     try {
       setLoading(true);
       const response = await axios.get(`${apiUrl}/api/history`);
@@ -23,7 +19,11 @@ function HistoryView({ apiUrl, refreshTrigger, onWordSelect }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [apiUrl]);
+
+  useEffect(() => {
+    loadHistory();
+  }, [loadHistory, refreshTrigger]);
 
   const deleteWord = async (id) => {
     if (!window.confirm('Supprimer ce mot de l\'historique ?')) return;

@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import axios from 'axios';
 import './App.css';
 import TranslationView from './components/TranslationView';
 import HistoryView from './components/HistoryView';
