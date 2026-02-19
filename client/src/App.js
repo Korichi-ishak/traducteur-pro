@@ -1,167 +1,116 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import './App.css';
-import Header from './components/Header';
-import DirectionSelector from './components/DirectionSelector';
-import ModeSelector from './components/ModeSelector';
-import InputSection from './components/InputSection';
-import ResultSection from './components/ResultSection';
-import ErrorMessage from './components/ErrorMessage';
-import Footer from './components/Footer';
-import History from './components/History';
-import Revision from './components/Revision';
-import Statistics from './components/Statistics';
-import { addToHistory } from './services/historyService';
+import TranslationView from './components/TranslationView';
+import HistoryView from './components/HistoryView';
+import RevisionView from './components/RevisionView';
+import StatsView from './components/StatsView';
+import SearchView from './components/SearchView';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 
 function App() {
-  const [currentView, setCurrentView] = useState('translator'); // translator, history, revision, statistics
-  const [direction, setDirection] = useState({ src: 'de', tgt: 'fr' });
-  const [mode, setMode] = useState('word');
-  const [inputText, setInputText] = useState('');
-  const [result, setResult] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [currentView, setCurrentView] = useState('translate');
+  const [refreshHistory, setRefreshHistory] = useState(0);
 
-  const handleTranslate = async () => {
-    const text = inputText.trim();
-    
-    if (!text) {
-      setError('Veuillez entrer du texte à traduire');
-      setTimeout(() => setError(''), 5000);
-      return;
-    }
-
-    setLoading(true);
-    setError('');
-    setResult(null);
-
-    try {
-      const response = await axios.post(`${API_URL}/api/translate`, {
-        text: text,
-        src: direction.src,
-        tgt: direction.tgt,
-        mode: mode
-      });
-
-      const data = response.data;
-      setResult(data);
-
-      // Ajouter à l'historique si c'est un mot (pas une phrase)
-      if (data.word && mode === 'word') {
-        await addToHistory(text, data);
-      }
-    } catch (err) {
-      setError(err.response?.data?.error || 'Erreur lors de la traduction');
-      setTimeout(() => setError(''), 5000);
-    } finally {
-      setLoading(false);
-    }
+  const views = {
+    translate: <TranslationView 
+      apiUrl={API_URL} 
+      onHistoryUpdate={() => setRefreshHistory(prev => prev + 1)} 
+    />,
+    history: <HistoryView 
+      apiUrl={API_URL} 
+      refreshTrigger={refreshHistory}
+      onWordSelect={(word, src, tgt) => setCurrentView('translate')}
+    />,
+    revision: <RevisionView apiUrl={API_URL} />,
+    stats: <StatsView apiUrl={API_URL} />,
+    search: <SearchView apiUrl={API_URL} />
   };
 
-  const handleKeyPress = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey) {
-      e.preventDefault();
-      handleTranslate();
-    }
-  };
-
-  const handleWordSelectFromHistory = (word, src, tgt) => {
-    setDirection({ src, tgt });
-    setInputText(word);
-    setMode('word');
-    setCurrentView('translator');
-    // Auto-translate
-    setTimeout(() => {
-      handleTranslate();
-    }, 100);
-  };
-
-  const renderContent = () => {
-    switch (currentView) {
-      case 'history':
-        return <History onWordSelect={handleWordSelectFromHistory} />;
-      case 'revision':
-        return <Revision />;
-      case 'statistics':
-        return <Statistics />;
-      case 'translator':
-      default:
-        return (
-          <>
-            <DirectionSelector 
-              direction={direction}
-              onDirectionChange={setDirection}
-            />
-            
-            <ModeSelector 
-              mode={mode}
-              onModeChange={setMode}
-            />
-            
-            <InputSection
-              inputText={inputText}
-              onInputChange={setInputText}
-              onTranslate={handleTranslate}
-              onKeyPress={handleKeyPress}
-              loading={loading}
-              mode={mode}
-            />
-            
-            {error && <ErrorMessage message={error} />}
-            
-            {result && (
-              <ResultSection 
-                result={result}
-                direction={direction}
-              />
-            )}
-          </>
-        );
-    }
-  };
+  const navItems = [
+    { id: 'translate', icon: '🌍', label: 'Traduire' },
+    { id: 'history', icon: '📚', label: 'Historique' },
+    { id: 'revision', icon: '🧠', label: 'Révision' },
+    { id: 'stats', icon: '📊', label: 'Stats' },
+    { id: 'search', icon: '🔍', label: 'Recherche' }
+  ];
 
   return (
     <div className="App">
-      <div className="container">
-        <Header />
-        
-        {/* Navigation Menu */}
-        <nav className="main-nav">
-          <button 
-            className={`nav-btn ${currentView === 'translator' ? 'active' : ''}`}
-            onClick={() => setCurrentView('translator')}
-          >
-            🌍 Traduire
-          </button>
-          <button 
-            className={`nav-btn ${currentView === 'history' ? 'active' : ''}`}
-            onClick={() => setCurrentView('history')}
-          >
-            📚 Historique
-          </button>
-          <button 
-            className={`nav-btn ${currentView === 'revision' ? 'active' : ''}`}
-            onClick={() => setCurrentView('revision')}
-          >
-            🧠 Révision
-          </button>
-          <button 
-            className={`nav-btn ${currentView === 'statistics' ? 'active' : ''}`}
-            onClick={() => setCurrentView('statistics')}
-          >
-            📊 Stats
-          </button>
+      {/* Animated background */}
+      <div className="bg-gradient"></div>
+      <div className="bg-grid"></div>
+
+      <div className="app-shell">
+        {/* Header */}
+        <header className="app-header">
+          <div className="header-glow"></div>
+          <div className="header-content">
+            <div className="logo-section">
+              <div className="logo-icon">
+                <span>DE</span>
+                <svg className="logo-arrows" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M7 16l-4-4m0 0l4-4m-4 4h18M17 8l4 4m0 0l-4 4"/>
+                </svg>
+                <span>FR</span>
+              </div>
+              <div className="logo-text">
+                <h1>LinguaPro</h1>
+                <span className="logo-badge">Allemand - Français</span>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        {/* Navigation */}
+        <nav className="app-nav">
+          <div className="nav-track">
+            {navItems.map(item => (
+              <button
+                key={item.id}
+                className={`nav-item ${currentView === item.id ? 'active' : ''}`}
+                onClick={() => setCurrentView(item.id)}
+              >
+                <span className="nav-icon">{item.icon}</span>
+                <span className="nav-label">{item.label}</span>
+                {currentView === item.id && <span className="nav-indicator"></span>}
+              </button>
+            ))}
+          </div>
         </nav>
 
         {/* Main Content */}
-        <div className="main-content">
-          {renderContent()}
-        </div>
-        
-        <Footer />
+        <main className="app-main" key={currentView}>
+          {views[currentView]}
+        </main>
+
+        {/* Footer */}
+        <footer className="app-footer">
+          <div className="footer-sources">
+            <span className="source-dot"></span>
+            Google Translate
+            <span className="source-dot"></span>
+            PONS
+            <span className="source-dot"></span>
+            Glosbe
+          </div>
+        </footer>
       </div>
+
+      {/* Mobile Bottom Nav */}
+      <nav className="mobile-nav">
+        {navItems.map(item => (
+          <button
+            key={item.id}
+            className={`mobile-nav-item ${currentView === item.id ? 'active' : ''}`}
+            onClick={() => setCurrentView(item.id)}
+          >
+            <span className="mobile-nav-icon">{item.icon}</span>
+            <span className="mobile-nav-label">{item.label}</span>
+          </button>
+        ))}
+      </nav>
     </div>
   );
 }

@@ -22,7 +22,7 @@ CREATE POLICY "Users can update their own profile" ON profiles
 -- Table de l'historique des traductions
 CREATE TABLE IF NOT EXISTS translation_history (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
+    user_id TEXT NOT NULL DEFAULT 'default-user',
     word TEXT NOT NULL,
     main_translation TEXT NOT NULL,
     translations JSONB DEFAULT '[]'::jsonb,
@@ -46,18 +46,18 @@ CREATE TABLE IF NOT EXISTS translation_history (
 -- Enable Row Level Security
 ALTER TABLE translation_history ENABLE ROW LEVEL SECURITY;
 
--- Policies for translation_history
+-- Policies for translation_history (permissive for now, restrict when auth is added)
 CREATE POLICY "Users can view their own translations" ON translation_history
-    FOR SELECT USING (auth.uid() = user_id);
+    FOR SELECT USING (true);
 
 CREATE POLICY "Users can insert their own translations" ON translation_history
-    FOR INSERT WITH CHECK (auth.uid() = user_id);
+    FOR INSERT WITH CHECK (true);
 
 CREATE POLICY "Users can update their own translations" ON translation_history
-    FOR UPDATE USING (auth.uid() = user_id);
+    FOR UPDATE USING (true);
 
 CREATE POLICY "Users can delete their own translations" ON translation_history
-    FOR DELETE USING (auth.uid() = user_id);
+    FOR DELETE USING (true);
 
 -- Index pour améliorer les performances
 CREATE INDEX IF NOT EXISTS idx_translation_history_user_id ON translation_history(user_id);
@@ -68,7 +68,7 @@ CREATE INDEX IF NOT EXISTS idx_translation_history_lookup ON translation_history
 -- Table des statistiques de révision
 CREATE TABLE IF NOT EXISTS revision_stats (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL UNIQUE,
+    user_id TEXT NOT NULL UNIQUE DEFAULT 'default-user',
     total_sessions INTEGER DEFAULT 0,
     total_words_reviewed INTEGER DEFAULT 0,
     total_correct INTEGER DEFAULT 0,
@@ -82,15 +82,15 @@ CREATE TABLE IF NOT EXISTS revision_stats (
 -- Enable Row Level Security
 ALTER TABLE revision_stats ENABLE ROW LEVEL SECURITY;
 
--- Policies for revision_stats
+-- Policies for revision_stats (permissive for now, restrict when auth is added)
 CREATE POLICY "Users can view their own stats" ON revision_stats
-    FOR SELECT USING (auth.uid() = user_id);
+    FOR SELECT USING (true);
 
 CREATE POLICY "Users can insert their own stats" ON revision_stats
-    FOR INSERT WITH CHECK (auth.uid() = user_id);
+    FOR INSERT WITH CHECK (true);
 
 CREATE POLICY "Users can update their own stats" ON revision_stats
-    FOR UPDATE USING (auth.uid() = user_id);
+    FOR UPDATE USING (true);
 
 -- Function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()

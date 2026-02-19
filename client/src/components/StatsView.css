@@ -1,0 +1,272 @@
+/* ========== Stats View – Dark Glassmorphism ========== */
+
+.stats-view {
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.stats-view h2 {
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  text-align: center;
+  margin-bottom: 28px;
+  letter-spacing: -0.02em;
+}
+
+/* ---------- Stats Grid ---------- */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+  margin-bottom: 32px;
+}
+
+.stat-card {
+  background: var(--bg-card);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  padding: 28px 18px;
+  border-radius: 16px;
+  text-align: center;
+  border: 1px solid var(--border);
+  transition: var(--transition);
+  animation: fadeIn 0.5s ease-out;
+}
+
+.stat-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(99, 102, 241, 0.35);
+  box-shadow: 0 8px 32px rgba(99, 102, 241, 0.12);
+}
+
+.stat-icon {
+  font-size: 2.6rem;
+  margin-bottom: 12px;
+  filter: drop-shadow(0 0 6px rgba(99, 102, 241, 0.3));
+}
+
+.stat-value {
+  font-size: 2.2rem;
+  font-weight: 800;
+  margin-bottom: 8px;
+}
+
+.stat-label {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Card colour variants – border-left accent */
+.stat-card.primary   { border-top: 3px solid #6366f1; }
+.stat-card.primary   .stat-value { color: #818cf8; }
+
+.stat-card.secondary { border-top: 3px solid #8b5cf6; }
+.stat-card.secondary .stat-value { color: #a78bfa; }
+
+.stat-card.tertiary  { border-top: 3px solid #6366f1; }
+.stat-card.tertiary  .stat-value { color: #818cf8; }
+
+.stat-card.success   { border-top: 3px solid #10b981; }
+.stat-card.success   .stat-value { color: #34d399; }
+
+.stat-card.error     { border-top: 3px solid #f87171; }
+.stat-card.error     .stat-value { color: #fca5a5; }
+
+.stat-card.highlight { border-top: 3px solid #fbbf24; }
+.stat-card.highlight .stat-value { color: #fde68a; }
+
+/* ---------- Success Rate Section ---------- */
+.success-rate-section {
+  background: var(--bg-card);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  padding: 28px;
+  border-radius: 16px;
+  margin-bottom: 24px;
+  border: 1px solid var(--border);
+}
+
+.success-rate-section h3 {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 18px;
+}
+
+.progress-bar-container {
+  background: rgba(30, 41, 59, 0.7);
+  height: 38px;
+  border-radius: 19px;
+  overflow: hidden;
+  margin-bottom: 14px;
+  border: 1px solid var(--border);
+}
+
+.progress-bar {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 700;
+  font-size: 1rem;
+  transition: width 1.5s ease-out;
+}
+
+.progress-bar.great {
+  background: linear-gradient(90deg, #10b981 0%, #059669 100%);
+}
+
+.progress-bar.good {
+  background: linear-gradient(90deg, #fbbf24 0%, #f59e0b 100%);
+}
+
+.progress-bar.okay {
+  background: linear-gradient(90deg, #f87171 0%, #ef4444 100%);
+}
+
+.success-message {
+  text-align: center;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+/* ---------- Level Distribution ---------- */
+.level-distribution {
+  background: var(--bg-card);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  padding: 28px;
+  border-radius: 16px;
+  margin-bottom: 24px;
+  border: 1px solid var(--border);
+}
+
+.level-distribution h3 {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 18px;
+}
+
+.level-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.level-bar-row {
+  display: grid;
+  grid-template-columns: 190px 1fr;
+  gap: 14px;
+  align-items: center;
+}
+
+.level-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.stars {
+  color: #fbbf24;
+  font-size: 1rem;
+  letter-spacing: 2px;
+  filter: drop-shadow(0 0 3px rgba(251, 191, 36, 0.4));
+}
+
+.level-count {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.level-bar-container {
+  background: rgba(30, 41, 59, 0.7);
+  height: 28px;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.level-bar {
+  height: 100%;
+  transition: width 1s ease-out;
+  border-radius: 14px;
+}
+
+/* ---------- Last Session ---------- */
+.last-session {
+  background: var(--bg-card);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  padding: 24px;
+  border-radius: 16px;
+  text-align: center;
+  border: 1px solid var(--border);
+}
+
+.last-session h3 {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.last-session p {
+  font-size: 1.05rem;
+  color: var(--text-muted);
+}
+
+/* ---------- Empty State ---------- */
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+}
+
+.empty-icon {
+  font-size: 4.5rem;
+  margin-bottom: 18px;
+  opacity: 0.7;
+}
+
+.empty-state h3 {
+  font-size: 1.4rem;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.empty-state p {
+  color: var(--text-muted);
+  font-size: 1rem;
+}
+
+/* ---------- Responsive ---------- */
+@media (max-width: 768px) {
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+
+  .level-bar-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .level-label {
+    font-size: 0.9rem;
+  }
+
+  .stars {
+    font-size: 0.85rem;
+  }
+
+  .stat-value {
+    font-size: 1.8rem;
+  }
+}

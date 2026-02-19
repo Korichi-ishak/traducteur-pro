@@ -1,389 +1,476 @@
 const { createClient } = require('@supabase/supabase-js');
-require('dotenv').config();
 
-// Créer le client Supabase avec la clé service (côté serveur)
 const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-// Vérifier si les credentials sont valides (pas les defaults du .env)
-const hasValidCredentials = supabaseUrl && 
-                           supabaseServiceKey && 
-                           supabaseUrl.startsWith('http') && 
-                           !supabaseUrl.includes('your-project-url');
+let supabase = null;
+let useMemory = false;
 
-if (!hasValidCredentials) {
-    console.warn('\n⚠️  ATTENTION: Supabase non configuré');
-    console.warn('   Le serveur fonctionne en mode dégradé (sans base de données)');
-    console.warn('   Pour activer Supabase:');
-    console.warn('   1. Copiez .env.example vers .env');
-    console.warn('   2. Ajoutez vos clés Supabase depuis https://app.supabase.com\n');
+// In-memory fallback storage
+const memoryStore = {
+  history: [],
+  stats: {
+    total_sessions: 0,
+    total_words_reviewed: 0,
+    total_correct: 0,
+    total_incorrect: 0,
+    streak_days: 0,
+    last_session: null
+  }
+};
+
+if (supabaseUrl && supabaseKey && supabaseUrl !== 'your-project-url.supabase.co') {
+  supabase = createClient(supabaseUrl, supabaseKey);
+  console.log('✅ Supabase connected');
+} else {
+  console.log('⚠️  Supabase not configured - using in-memory storage');
+  useMemory = true;
 }
 
-const supabase = hasValidCredentials 
-    ? createClient(supabaseUrl, supabaseServiceKey)
-    : null;
-
-// ═══════════════════════════════════════════════════════════
-// Historique des traductions
-// ═══════════════════════════════════════════════════════════
-
-/**
- * Récupérer l'historique d'un utilisateur
- */
-async function getHistory(userId) {
-    if (!supabase) return [];
-    
+// Test Supabase schema on startup
+async function testSupabaseSchema() {
+  if (!supabase || useMemory) return;
+  try {
+    // Test with a user_id filter to check for UUID type mismatch
     const { data, error } = await supabase
-        .from('translation_history')
-        .select('*')
-        .eq('user_id', userId)
-        .order('last_lookup', { ascending: false });
-    
+      .from('translation_history')
+      .select('id')
+      .eq('user_id', 'test-user')
+      .limit(1);
     if (error) {
-        console.error('Erreur récupération historique:', error);
-        return [];
+      console.warn('⚠️  Supabase schema error:', error.message);
+      console.warn('   → Switching to in-memory storage');
+      console.warn('   → To fix: run this SQL in your Supabase SQL Editor:');
+      console.warn('     ALTER TABLE translation_history DROP CONSTRAINT IF EXISTS translation_history_user_id_fkey;');
+      console.warn('     ALTER TABLE translation_history ALTER COLUMN user_id TYPE TEXT USING user_id::TEXT;');
+      console.warn('     ALTER TABLE translation_history ALTER COLUMN user_id SET DEFAULT \'default-user\';');
+      console.warn('     ALTER TABLE revision_stats DROP CONSTRAINT IF EXISTS revision_stats_user_id_fkey;');
+      console.warn('     ALTER TABLE revision_stats ALTER COLUMN user_id TYPE TEXT USING user_id::TEXT;');
+      console.warn('     NOTIFY pgrst, \'reload schema\';');
+      useMemory = true;
+    } else {
+      console.log('✅ Supabase schema OK');
     }
-    
-    return data || [];
+  } catch (e) {
+    console.warn('⚠️  Supabase test failed:', e.message);
+    useMemory = true;
+  }
+}
+testSupabaseSchema();
+
+// ============================================
+// HELPER FUNCTIONS
+// ============================================
+
+// Calculate next revision date based on score
+function calculateNextRevision(score) {
+  const daysMap = [1, 2, 4, 7, 14, 30]; // Spaced repetition intervals
+  const days = daysMap[Math.min(score, 5)];
+  const nextDate = new Date();
+  nextDate.setDate(nextDate.getDate() + days);
+  return nextDate.toISOString();
 }
 
-/**
- * Ajouter ou mettre à jour une traduction
- */
-async function addToHistory(userId, word, result) {
-    if (!supabase) return null;
+// ============================================
+// HISTORY FUNCTIONS
+// ============================================
+
+async function getHistory(userId) {
+  if (!supabase || useMemory) {
+    return memoryStore.history.filter(h => h.user_id === userId)
+      .sort((a, b) => new Date(b.last_lookup) - new Date(a.last_lookup));
+  }
+  
+  try {
+    const { data, error } = await supabase
+      .from('translation_history')
+      .select('*')
+      .order('last_lookup', { ascending: false });
     
-    // Vérifier si le mot existe déjà
+    if (error) throw error;
+    return data || [];
+  } catch (error) {
+    console.error('getHistory error:', error);
+    return memoryStore.history;
+  }
+}
+
+async function addToHistory(userId, word, result) {
+  if (!supabase || useMemory) {
+    // In-memory storage
+    const existing = memoryStore.history.find(
+      h => h.user_id === userId && h.word === word && h.src_lang === result.src
+    );
+    if (existing) {
+      existing.lookup_count += 1;
+      existing.last_lookup = new Date().toISOString();
+      existing.main_translation = result.main_translation;
+      existing.translations = result.all_translations || [];
+      existing.senses = result.senses || [];
+      existing.phrases = result.phrases || [];
+      existing.examples = result.examples || [];
+    } else {
+      memoryStore.history.push({
+        id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2),
+        user_id: userId,
+        word,
+        main_translation: result.main_translation,
+        translations: result.all_translations || [],
+        senses: result.senses || [],
+        synonyms: [],
+        examples: result.examples || [],
+        phrases: result.phrases || [],
+        src_lang: result.src,
+        tgt_lang: result.tgt,
+        date_added: new Date().toISOString(),
+        last_lookup: new Date().toISOString(),
+        lookup_count: 1,
+        revision_score: 0,
+        next_revision: new Date().toISOString(),
+        times_correct: 0,
+        times_incorrect: 0
+      });
+    }
+    return;
+  }
+  
+  try {
+    // Check if word already exists
     const { data: existing } = await supabase
-        .from('translation_history')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('word', word)
-        .eq('src_lang', result.src)
-        .single();
+      .from('translation_history')
+      .select('*')
+      .eq('word', word)
+      .eq('src_lang', result.src)
+      .single();
     
     if (existing) {
-        // Mettre à jour
-        const { data, error } = await supabase
-            .from('translation_history')
-            .update({
-                main_translation: result.main_translation || result.translation,
-                lookup_count: existing.lookup_count + 1,
-                last_lookup: new Date().toISOString(),
-                translations: result.translations || [],
-                senses: result.senses || [],
-                synonyms: result.synonyms || [],
-                examples: (result.examples || []).slice(0, 8),
-                phrases: (result.phrases || []).slice(0, 6)
-            })
-            .eq('id', existing.id)
-            .select()
-            .single();
-        
-        if (error) console.error('Erreur mise à jour historique:', error);
-        return data;
+      // Update existing entry
+      const { error } = await supabase
+        .from('translation_history')
+        .update({
+          lookup_count: existing.lookup_count + 1,
+          last_lookup: new Date().toISOString(),
+          main_translation: result.main_translation,
+          translations: result.all_translations || [],
+          senses: result.senses || [],
+          phrases: result.phrases || [],
+          examples: result.examples || []
+        })
+        .eq('id', existing.id);
+      
+      if (error) throw error;
     } else {
-        // Insérer nouveau
-        const { data, error } = await supabase
-            .from('translation_history')
-            .insert({
-                user_id: userId,
-                word: word,
-                main_translation: result.main_translation || result.translation,
-                translations: result.translations || [],
-                senses: result.senses || [],
-                synonyms: result.synonyms || [],
-                examples: (result.examples || []).slice(0, 8),
-                phrases: (result.phrases || []).slice(0, 6),
-                src_lang: result.src,
-                tgt_lang: result.tgt,
-                revision_score: 0,
-                next_revision: new Date().toISOString()
-            })
-            .select()
-            .single();
-        
-        if (error) console.error('Erreur ajout historique:', error);
-        return data;
+      // Insert new entry
+      const { error } = await supabase
+        .from('translation_history')
+        .insert({
+          word,
+          main_translation: result.main_translation,
+          translations: result.all_translations || [],
+          senses: result.senses || [],
+          synonyms: [],
+          examples: result.examples || [],
+          phrases: result.phrases || [],
+          src_lang: result.src,
+          tgt_lang: result.tgt,
+          date_added: new Date().toISOString(),
+          last_lookup: new Date().toISOString(),
+          lookup_count: 1,
+          revision_score: 0,
+          next_revision: new Date().toISOString(),
+          times_correct: 0,
+          times_incorrect: 0
+        });
+      
+      if (error) throw error;
     }
+  } catch (error) {
+    console.error('addToHistory error:', error);
+  }
 }
 
-/**
- * Rechercher dans l'historique
- */
+async function deleteFromHistory(userId, id) {
+  if (!supabase || useMemory) {
+    memoryStore.history = memoryStore.history.filter(h => h.id !== id);
+    return;
+  }
+  
+  try {
+    const { error } = await supabase
+      .from('translation_history')
+      .delete()
+      .eq('id', id);
+    
+    if (error) throw error;
+  } catch (error) {
+    console.error('deleteFromHistory error:', error);
+    throw error;
+  }
+}
+
 async function searchHistory(userId, query) {
-    if (!supabase) return [];
-    
+  if (!supabase || useMemory) {
+    const q = query.toLowerCase();
+    return memoryStore.history.filter(h =>
+      h.word.toLowerCase().includes(q) ||
+      h.main_translation.toLowerCase().includes(q)
+    );
+  }
+  
+  try {
     const { data, error } = await supabase
-        .from('translation_history')
-        .select('*')
-        .eq('user_id', userId)
-        .or(`word.ilike.%${query}%,main_translation.ilike.%${query}%`)
-        .order('last_lookup', { ascending: false });
+      .from('translation_history')
+      .select('*')
+      .or(`word.ilike.%${query}%,main_translation.ilike.%${query}%`)
+      .order('last_lookup', { ascending: false });
     
-    if (error) {
-        console.error('Erreur recherche historique:', error);
-        return [];
-    }
-    
+    if (error) throw error;
     return data || [];
+  } catch (error) {
+    console.error('searchHistory error:', error);
+    return [];
+  }
 }
 
-/**
- * Supprimer un mot de l'historique
- */
-async function deleteFromHistory(userId, wordId) {
-    if (!supabase) return false;
-    
-    const { error } = await supabase
-        .from('translation_history')
-        .delete()
-        .eq('user_id', userId)
-        .eq('id', wordId);
-    
-    if (error) {
-        console.error('Erreur suppression:', error);
-        return false;
-    }
-    
-    return true;
-}
+// ============================================
+// REVISION FUNCTIONS
+// ============================================
 
-/**
- * Effacer tout l'historique
- */
-async function clearHistory(userId) {
-    if (!supabase) return false;
-    
-    const { error } = await supabase
-        .from('translation_history')
-        .delete()
-        .eq('user_id', userId);
-    
-    if (error) {
-        console.error('Erreur effacement historique:', error);
-        return false;
-    }
-    
-    return true;
-}
-
-// ═══════════════════════════════════════════════════════════
-// Révision
-// ═══════════════════════════════════════════════════════════
-
-/**
- * Récupérer les mots à réviser
- */
-async function getWordsForRevision(userId, limit = 20) {
-    if (!supabase) return [];
-    
+async function getWordsForRevision(userId) {
+  if (!supabase || useMemory) {
+    const now = new Date();
+    const due = memoryStore.history
+      .filter(h => new Date(h.next_revision) <= now)
+      .sort((a, b) => new Date(a.next_revision) - new Date(b.next_revision))
+      .slice(0, 15);
+    if (due.length > 0) return due;
+    return [...memoryStore.history]
+      .sort((a, b) => a.revision_score - b.revision_score)
+      .slice(0, 10);
+  }
+  
+  try {
     const now = new Date().toISOString();
     
-    // Mots qui ont besoin d'être révisés
-    const { data: dueWords } = await supabase
-        .from('translation_history')
-        .select('*')
-        .eq('user_id', userId)
-        .lte('next_revision', now)
-        .limit(limit);
+    // Get words due for revision
+    const { data: dueWords, error: error1 } = await supabase
+      .from('translation_history')
+      .select('*')
+      .lte('next_revision', now)
+      .order('next_revision', { ascending: true })
+      .limit(15);
     
-    if (dueWords && dueWords.length >= limit) {
-        return dueWords;
+    if (error1) throw error1;
+    
+    if (dueWords && dueWords.length > 0) {
+      return dueWords;
     }
     
-    // Compléter avec les mots les moins révisés
-    const remaining = limit - (dueWords?.length || 0);
-    if (remaining > 0) {
-        const { data: lessReviewed } = await supabase
-            .from('translation_history')
-            .select('*')
-            .eq('user_id', userId)
-            .gt('next_revision', now)
-            .order('revision_score', { ascending: true })
-            .limit(remaining);
-        
-        return [...(dueWords || []), ...(lessReviewed || [])];
-    }
+    // If no words due, get words with lowest scores
+    const { data: lowScoreWords, error: error2 } = await supabase
+      .from('translation_history')
+      .select('*')
+      .order('revision_score', { ascending: true })
+      .order('last_lookup', { ascending: false })
+      .limit(10);
     
-    return dueWords || [];
+    if (error2) throw error2;
+    return lowScoreWords || [];
+  } catch (error) {
+    console.error('getWordsForRevision error:', error);
+    return [];
+  }
 }
 
-/**
- * Enregistrer le résultat d'une révision
- */
 async function recordRevisionResult(userId, wordId, correct) {
-    if (!supabase) return null;
+  if (!supabase || useMemory) {
+    const word = memoryStore.history.find(h => h.id === wordId);
+    if (!word) throw new Error('Word not found');
+    word.revision_score = correct
+      ? Math.min(5, word.revision_score + 1)
+      : Math.max(0, word.revision_score - 1);
+    word.next_revision = correct
+      ? calculateNextRevision(word.revision_score)
+      : new Date().toISOString();
+    word.times_correct += correct ? 1 : 0;
+    word.times_incorrect += correct ? 0 : 1;
+    // Update memory stats
+    memoryStore.stats.total_words_reviewed += 1;
+    memoryStore.stats.total_correct += correct ? 1 : 0;
+    memoryStore.stats.total_incorrect += correct ? 0 : 1;
+    memoryStore.stats.last_session = new Date().toISOString();
+    return;
+  }
+  
+  try {
+    // Get current word data
+    const { data: word, error: fetchError } = await supabase
+      .from('translation_history')
+      .select('*')
+      .eq('id', wordId)
+      .single();
     
-    // Récupérer le mot
-    const { data: word } = await supabase
-        .from('translation_history')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('id', wordId)
-        .single();
+    if (fetchError) throw fetchError;
+    if (!word) throw new Error('Word not found');
     
-    if (!word) return null;
+    // Calculate new score and next revision
+    const newScore = correct 
+      ? Math.min(5, word.revision_score + 1)
+      : Math.max(0, word.revision_score - 1);
     
-    let newScore = word.revision_score;
-    let nextRevision = new Date();
+    const nextRevision = correct 
+      ? calculateNextRevision(newScore)
+      : new Date().toISOString();
     
-    if (correct) {
-        newScore = Math.min(5, word.revision_score + 1);
-        
-        // Intervalles de révision selon le score (en jours)
-        const intervals = [1, 3, 7, 14, 30];
-        const days = intervals[newScore - 1] || 30;
-        nextRevision.setDate(nextRevision.getDate() + days);
-    } else {
-        newScore = Math.max(0, word.revision_score - 1);
-        
-        // Réviser bientôt si erreur
-        nextRevision.setHours(nextRevision.getHours() + 4);
-    }
+    // Update word
+    const { error: updateError } = await supabase
+      .from('translation_history')
+      .update({
+        revision_score: newScore,
+        next_revision: nextRevision,
+        times_correct: word.times_correct + (correct ? 1 : 0),
+        times_incorrect: word.times_incorrect + (correct ? 0 : 1)
+      })
+      .eq('id', wordId);
     
-    const { data, error } = await supabase
-        .from('translation_history')
-        .update({
-            revision_score: newScore,
-            next_revision: nextRevision.toISOString(),
-            times_correct: correct ? word.times_correct + 1 : word.times_correct,
-            times_incorrect: correct ? word.times_incorrect : word.times_incorrect + 1
-        })
-        .eq('id', wordId)
-        .select()
-        .single();
+    if (updateError) throw updateError;
     
-    if (error) console.error('Erreur enregistrement révision:', error);
-    return data;
+    // Update session stats
+    await updateSessionStats(userId, correct);
+  } catch (error) {
+    console.error('recordRevisionResult error:', error);
+    throw error;
+  }
 }
 
-// ═══════════════════════════════════════════════════════════
-// Statistiques
-// ═══════════════════════════════════════════════════════════
-
-/**
- * Récupérer les statistiques d'un utilisateur
- */
-async function getStats(userId) {
-    if (!supabase) return null;
+async function updateSessionStats(userId, correct) {
+  if (!supabase || useMemory) return; // Already handled in memory
+  
+  try {
+    // Get current stats
+    const { data: allStats, error: fetchError } = await supabase
+      .from('revision_stats')
+      .select('*');
     
-    const { data, error } = await supabase
+    const stats = allStats?.[0];
+    
+    if (fetchError && fetchError.code !== 'PGRST116') {
+      throw fetchError;
+    }
+    
+    if (!stats) {
+      const { error: insertError } = await supabase
         .from('revision_stats')
-        .select('*')
-        .eq('user_id', userId)
-        .single();
-    
-    if (error && error.code !== 'PGRST116') {
-        console.error('Erreur récupération stats:', error);
-        return null;
-    }
-    
-    // Si pas de stats, les créer
-    if (!data) {
-        const { data: newStats } = await supabase
-            .from('revision_stats')
-            .insert({ user_id: userId })
-            .select()
-            .single();
-        
-        return newStats;
-    }
-    
-    return data;
-}
-
-/**
- * Mettre à jour les statistiques après une session
- */
-async function updateSessionStats(userId, wordsReviewed, correctCount) {
-    if (!supabase) return null;
-    
-    const stats = await getStats(userId);
-    if (!stats) return null;
-    
-    const today = new Date().toISOString().split('T')[0];
-    const lastSessionDate = stats.last_session ? stats.last_session.split('T')[0] : null;
-    
-    let streakDays = stats.streak_days || 0;
-    
-    if (lastSessionDate === today) {
-        // Même jour, pas de changement de streak
-    } else if (lastSessionDate) {
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        const yesterdayStr = yesterday.toISOString().split('T')[0];
-        
-        if (lastSessionDate === yesterdayStr) {
-            streakDays += 1;
-        } else {
-            streakDays = 1;
-        }
+        .insert({
+          total_sessions: 1,
+          total_words_reviewed: 1,
+          total_correct: correct ? 1 : 0,
+          total_incorrect: correct ? 0 : 1,
+          streak_days: 0,
+          last_session: new Date().toISOString()
+        });
+      
+      if (insertError) throw insertError;
     } else {
-        streakDays = 1;
-    }
-    
-    const { data, error } = await supabase
+      const lastSession = stats.last_session ? new Date(stats.last_session) : null;
+      const now = new Date();
+      const isNewSession = !lastSession || 
+        (now.getTime() - lastSession.getTime()) > 30 * 60 * 1000;
+      
+      const { error: updateError } = await supabase
         .from('revision_stats')
         .update({
-            total_sessions: stats.total_sessions + 1,
-            total_words_reviewed: stats.total_words_reviewed + wordsReviewed,
-            total_correct: stats.total_correct + correctCount,
-            total_incorrect: stats.total_incorrect + (wordsReviewed - correctCount),
-            streak_days: streakDays,
-            last_session: new Date().toISOString()
+          total_sessions: stats.total_sessions + (isNewSession ? 1 : 0),
+          total_words_reviewed: stats.total_words_reviewed + 1,
+          total_correct: stats.total_correct + (correct ? 1 : 0),
+          total_incorrect: stats.total_incorrect + (correct ? 0 : 1),
+          last_session: now.toISOString()
         })
-        .eq('user_id', userId)
-        .select()
-        .single();
-    
-    if (error) console.error('Erreur mise à jour stats:', error);
-    return data;
+        .eq('id', stats.id);
+      
+      if (updateError) throw updateError;
+    }
+  } catch (error) {
+    console.error('updateSessionStats error:', error);
+  }
 }
 
-/**
- * Récupérer les statistiques complètes
- */
+// ============================================
+// STATISTICS FUNCTIONS
+// ============================================
+
 async function getStatistics(userId) {
-    if (!supabase) return null;
+  const emptyStats = {
+    total_sessions: 0,
+    total_words_reviewed: 0,
+    total_correct: 0,
+    total_incorrect: 0,
+    streak_days: 0,
+    last_session: null,
+    total_words: 0,
+    level_distribution: { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }
+  };
+
+  if (!supabase || useMemory) {
+    const levelDistribution = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+    memoryStore.history.forEach(h => {
+      const s = h.revision_score || 0;
+      levelDistribution[s] = (levelDistribution[s] || 0) + 1;
+    });
+    return {
+      ...memoryStore.stats,
+      total_words: memoryStore.history.length,
+      level_distribution: levelDistribution
+    };
+  }
+  
+  try {
+    // Get revision stats
+    const { data: allStats } = await supabase
+      .from('revision_stats')
+      .select('*');
+    const revisionStats = allStats?.[0];
     
-    const stats = await getStats(userId);
-    const history = await getHistory(userId);
+    // Get total words count
+    const { count } = await supabase
+      .from('translation_history')
+      .select('*', { count: 'exact', head: true });
     
-    const totalWords = history.length;
-    const avgLookups = totalWords > 0
-        ? history.reduce((sum, e) => sum + e.lookup_count, 0) / totalWords
-        : 0;
+    // Get level distribution
+    const { data: history } = await supabase
+      .from('translation_history')
+      .select('revision_score');
     
-    const masteredWords = history.filter(e => e.revision_score >= 4).length;
-    const learningWords = history.filter(e => e.revision_score >= 1 && e.revision_score < 4).length;
-    const newWords = history.filter(e => e.revision_score === 0).length;
-    
-    const successRate = stats.total_words_reviewed > 0
-        ? ((stats.total_correct / stats.total_words_reviewed) * 100).toFixed(1)
-        : 0;
+    const levelDistribution = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+    if (history) {
+      history.forEach(item => {
+        const score = item.revision_score || 0;
+        levelDistribution[score] = (levelDistribution[score] || 0) + 1;
+      });
+    }
     
     return {
-        ...stats,
-        totalWords,
-        avgLookups: avgLookups.toFixed(1),
-        masteredWords,
-        learningWords,
-        newWords,
-        successRate
+      total_sessions: revisionStats?.total_sessions || 0,
+      total_words_reviewed: revisionStats?.total_words_reviewed || 0,
+      total_correct: revisionStats?.total_correct || 0,
+      total_incorrect: revisionStats?.total_incorrect || 0,
+      streak_days: revisionStats?.streak_days || 0,
+      last_session: revisionStats?.last_session || null,
+      total_words: count || 0,
+      level_distribution: levelDistribution
     };
+  } catch (error) {
+    console.error('getStatistics error:', error);
+    return emptyStats;
+  }
 }
 
 module.exports = {
-    supabase,
-    getHistory,
-    addToHistory,
-    searchHistory,
-    deleteFromHistory,
-    clearHistory,
-    getWordsForRevision,
-    recordRevisionResult,
-    getStats,
-    updateSessionStats,
-    getStatistics
+  getHistory,
+  addToHistory,
+  deleteFromHistory,
+  searchHistory,
+  getWordsForRevision,
+  recordRevisionResult,
+  getStatistics
 };
